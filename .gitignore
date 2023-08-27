@@ -1,0 +1,4 @@
+roms/
+
+*.sdl
+*.test
