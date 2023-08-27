@@ -8,14 +8,21 @@
 #define WIDTH (64*SCALE)
 #define HEIGHT (32*SCALE)
 
-int main(void)
+int main(int argc, char **argv)
 {
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s <ROM path>\n", argv[0]);
+        exit(1);
+    }
+
+    Chip8 cpu = {0};
+    chip8_load_rom(&cpu, argv[1]);
+
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         fprintf(stderr, "Failed to initialize SDL\n");
         exit(1);
     }
 
-    printf("SDL Initialized\n");
     SDL_Window *window = SDL_CreateWindow("CHIP-8", 0, 0, WIDTH, HEIGHT, 0);
     if (!window) {
         fprintf(stderr, "Failed to create window\n");
@@ -36,16 +43,12 @@ int main(void)
     //    exit(1);
     //}
 
-    Chip8 cpu = {0};
-    cpu.display[32] = 1;
-
     SDL_Event e;
     while (true) {
         SDL_PollEvent(&e);
         if (e.type == SDL_QUIT) {
             break;
         }
-
 
         // CPU rendering
         //SDL_FillRect(surface, &rect, 0xffffffff);

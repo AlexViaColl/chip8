@@ -28,7 +28,6 @@ typedef struct Chip8 {
 
 void chip8_load_rom(Chip8 *cpu, const char *path)
 {
-    (void)cpu;
     FILE *f = fopen(path, "rb");
     if (!f) {
         fprintf(stderr, "Failed to open file %s\n", path);
@@ -48,11 +47,16 @@ void chip8_load_rom(Chip8 *cpu, const char *path)
         exit(1);
     }
 
+    if (size > 0x1000) {
+        fprintf(stderr, "Only ROM's up to 1KB (4096 bytes) are supported\n");
+        exit(1);
+    }
+
     char raw[0x1000] = {0};
     size_t nread = fread(raw, 1, size, f);
-    printf("Read %ld bytes\n", nread);
-
     memcpy(cpu->memory + 0x200, raw, size);
+
+    printf("Successfully loaded %s (%ld instructions, %ld bytes)\n", path, nread/2, nread);
 }
 
 void chip8_exec(Chip8 *cpu, uint16_t inst)
