@@ -16,7 +16,10 @@ int main(int argc, char **argv)
     }
 
     Chip8 cpu = {0};
+    chip8_load_sprites(&cpu);
     chip8_load_rom(&cpu, argv[1]);
+
+    chip8_disassemble(&cpu);
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         fprintf(stderr, "Failed to initialize SDL\n");
@@ -43,12 +46,19 @@ int main(int argc, char **argv)
     //    exit(1);
     //}
 
+    Uint32 prev_ticks = SDL_GetTicks();
+
     SDL_Event e;
     while (true) {
         SDL_PollEvent(&e);
         if (e.type == SDL_QUIT) {
             break;
         }
+
+        Uint32 curr_ticks = SDL_GetTicks();
+        Uint32 delta_ticks = curr_ticks - prev_ticks;
+        prev_ticks = curr_ticks;
+        chip8_step(&cpu, (uint32_t)delta_ticks);
 
         // CPU rendering
         //SDL_FillRect(surface, &rect, 0xffffffff);

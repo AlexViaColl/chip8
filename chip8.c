@@ -1,12 +1,15 @@
 #include <assert.h>
 #include <errno.h>
-#include <stdio.h>
+#include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
 #define MAX_SUBROUTINES 32
+#define CLOCK_RATE 300 // Cycles per second (Hz)
+#define MS_PER_CYCLE (1000.0f / CLOCK_RATE)
 
 typedef struct Chip8 {
     uint8_t V[16];
@@ -22,8 +25,10 @@ typedef struct Chip8 {
     uint8_t memory[0x1000];
     uint8_t display[64*32];
 
-    uint8_t call_stack_index;
+    uint8_t stack_pointer;
     uint16_t call_stack[MAX_SUBROUTINES];
+
+    uint32_t ms_elapsed;
 } Chip8;
 
 void chip8_load_rom(Chip8 *cpu, const char *path)
@@ -56,7 +61,178 @@ void chip8_load_rom(Chip8 *cpu, const char *path)
     size_t nread = fread(raw, 1, size, f);
     memcpy(cpu->memory + 0x200, raw, size);
 
+    cpu->PC = 0x200;
+
     printf("Successfully loaded %s (%ld instructions, %ld bytes)\n", path, nread/2, nread);
+}
+
+void chip8_load_sprites(Chip8 *cpu)
+{
+    uint8_t hex_digit_sprites[] = {
+        0xf0, 0x90, 0x90, 0x90, 0xf0, // "0"
+        0x20, 0x60, 0x20, 0x20, 0x70, // "1"
+        0xf0, 0x10, 0xf0, 0x80, 0xf0, // "2"
+        0xf0, 0x10, 0xf0, 0x10, 0xf0, // "3"
+        0x90, 0x90, 0xf0, 0x10, 0x10, // "4"
+        0xf0, 0x80, 0xf0, 0x10, 0xf0, // "5"
+        0xf0, 0x80, 0xf0, 0x90, 0xf0, // "6"
+        0xf0, 0x10, 0x20, 0x40, 0x40, // "7"
+        0xf0, 0x90, 0xf0, 0x90, 0xf0, // "8"
+        0xf0, 0x90, 0xf0, 0x10, 0xf0, // "9"
+        0xf0, 0x90, 0xf0, 0x90, 0x90, // "A"
+        0xe0, 0x90, 0xe0, 0x90, 0xe0, // "B"
+        0xf0, 0x80, 0x80, 0x80, 0xf0, // "C"
+        0xe0, 0x90, 0x90, 0x90, 0xe0, // "D"
+        0xf0, 0x80, 0xf0, 0x80, 0xf0, // "E"
+        0xf0, 0x80, 0xf0, 0x80, 0x80, // "F"
+    };
+    memcpy(cpu->memory, hex_digit_sprites, sizeof(hex_digit_sprites));
+}
+
+bool chip8_is_key_pressed(uint8_t key)
+{
+    (void)key;
+    // TODO
+    return false;
+}
+
+const char* chip8_decode(Chip8 *cpu, uint16_t inst)
+{
+    (void)cpu;
+    static char buf[128];
+    uint8_t high = inst >> 8;   // 0x6034 >> 8   = 0x60
+    uint8_t low  = inst & 0xff; // 0x6034 & 0xff = 0x34
+
+    uint8_t opcode = high >> 4; // 0x60 >> 4 = 6
+    if (opcode == 0) {
+        if (low == 0xe0) {
+            return "CLS";
+        } else if (low == 0xee) {
+            return "RET";
+        } else {
+            sprintf(buf, "SYS 0x%03x", inst & 0xfff);
+            return buf;
+            //fprintf(stderr, "Call COSMAC VIP routine at 0x%03x\n", inst & 0xfff);
+        }
+    } else if (opcode == 1) {
+        sprintf(buf, "JP 0x%03x", inst & 0xfff);
+        return buf;
+    } else if (opcode == 2) {
+        sprintf(buf, "CALL 0x%03x", inst & 0xfff);
+        return buf;
+    } else if (opcode == 3) {
+        sprintf(buf, "SE V%X, 0x%02x (skip if equal)", high & 0xf, low);
+        return buf;
+    } else if (opcode == 4) {
+        sprintf(buf, "SNE V%X, 0x%02x (skip if not equal)", high & 0xf, low);
+        return buf;
+    } else if (opcode == 5) {
+        sprintf(buf, "SE V%X, V%X (skip if equal)", high & 0xf, low >> 4);
+        return buf;
+    } else if (opcode == 6) {
+        sprintf(buf, "LD V%X, 0x%02x", high & 0xf, low);
+        return buf;
+    } else if (opcode == 7) {
+        sprintf(buf, "ADD V%X, 0x%02x", high & 0xf, low);
+        return buf;
+    } else if (opcode == 8) {
+        uint8_t mod = low & 0xf;
+        uint8_t x = high & 0xf;
+        uint8_t y = low >> 4;
+        if (mod == 0) {
+            sprintf(buf, "LD V%X, V%X", x, y);
+            return buf;
+        } else if (mod == 1) {
+            sprintf(buf, "OR V%X, V%X", x, y);
+            return buf;
+        } else if (mod == 2) {
+            sprintf(buf, "AND V%X, V%X", x, y);
+            return buf;
+        } else if (mod == 3) {
+            sprintf(buf, "XOR V%X, V%X", x, y);
+            return buf;
+        } else if (mod == 4) {
+            sprintf(buf, "ADD V%X, V%X", x, y);
+            return buf;
+        } else if (mod == 5) {
+            sprintf(buf, "SUB V%X, V%X", x, y);
+            return buf;
+        } else if (mod == 6) {
+            sprintf(buf, "SHR V%X", x);
+            return buf;
+        } else if (mod == 7) {
+            sprintf(buf, "SUBN V%X, V%X", x, y);
+            return buf;
+        } else if (mod == 0xe) {
+            sprintf(buf, "SHL V%X", x);
+            return buf;
+        } else {
+            assert(0 && "Invalid instruction 0x8XY?");
+        }
+    } else if (opcode == 9) {
+        sprintf(buf, "SNE V%X, V%X (skip if not equal)", high & 0xf, low >> 4);
+        return buf;
+    } else if (opcode == 0xa) {
+        sprintf(buf, "LD I, 0x%03x", inst & 0xfff);
+        return buf;
+    } else if (opcode == 0xb) {
+        sprintf(buf, "JP V0, 0x%03x", inst & 0xfff);
+        return buf;
+    } else if (opcode == 0xc) {
+        uint8_t x = high & 0xf;
+        sprintf(buf, "RND V%X, 0x%02x", x, low);
+        return buf;
+    } else if (opcode == 0xd) {
+        uint8_t x = high & 0xf;
+        uint8_t y = low >> 4;
+        uint8_t n = low & 0xf; // height (bytes read)
+        sprintf(buf, "DRW V%X, V%X, %d", x, y, n);
+        return buf;
+    } else if (opcode == 0xe) {
+        uint8_t x = high & 0xf;
+        if (low == 0x9e) {
+            sprintf(buf, "SKP V%X (skip if key Vx pressed)", x);
+            return buf;
+        } else if (low == 0xa1) {
+            sprintf(buf, "SKNP V%X (skip if key Vx not pressed)", x);
+            return buf;
+        }
+    } else if (opcode == 0xf) {
+        uint8_t x = high & 0xf;
+        if (low == 0x07) {
+            sprintf(buf, "LD V%X, DT (Set Vx = delay timer value)", x);
+            return buf;
+        } else if (low == 0x0a) {
+            sprintf(buf, "LD V%X, K (store the value of the key in Vx)", x);
+            return buf;
+        } else if (low == 0x15) {
+            sprintf(buf, "LD DT, V%X (Set delay timer = Vx)", x);
+            return buf;
+        } else if (low == 0x18) {
+            sprintf(buf, "LD ST, V%X (Set sound timer = Vx)", x);
+            return buf;
+        } else if (low == 0x1e) {
+            sprintf(buf, "ADD I, V%X", x);
+            return buf;
+        } else if (low == 0x29) {
+            sprintf(buf, "LD F, V%X (Set I = location of sprite for digit Vx)", x);
+            return buf;
+        } else if (low == 0x33) {
+            sprintf(buf, "LD B, V%X (Store BCD representation of Vx in I, I+1 and I+2)", x);
+            return buf;
+        } else if (low == 0x55) {
+            sprintf(buf, "LD [I], V%X (Store registers V0 through Vx in memory starting at location I)", x);
+            return buf;
+        } else if (low == 0x65) {
+            sprintf(buf, "LD V%X, [I] (Read registers V0 through Vx from memory starting at location I)", x);
+            return buf;
+        } else {
+            assert(0 && "Instruction FX?? is not implemented");
+        }
+    } else {
+        assert(0 && "Instruction not implemented");
+    }
+    return "Unknown";
 }
 
 void chip8_exec(Chip8 *cpu, uint16_t inst)
@@ -73,34 +249,39 @@ void chip8_exec(Chip8 *cpu, uint16_t inst)
             }
         } else if (low == 0xee) {
             printf("return\n");
-            assert(cpu->call_stack_index > 0);
-            cpu->PC = cpu->call_stack[--cpu->call_stack_index];
+            assert(cpu->stack_pointer > 0);
+            cpu->PC = cpu->call_stack[cpu->stack_pointer - 1];
+            cpu->stack_pointer -= 1;
+            return;
         } else {
             fprintf(stderr, "Call COSMAC VIP routine at 0x%03x\n", inst & 0xfff);
         }
     } else if (opcode == 1) {
-        printf("goto 0x%03x\n", inst & 0xfff);
+        printf("JP 0x%03x\n", inst & 0xfff);
         cpu->PC = inst & 0xfff;
+        return;
     } else if (opcode == 2) {
-        printf("*(0x%03x)()\n", inst & 0xfff);
-        assert(cpu->call_stack_index < MAX_SUBROUTINES-1);
-        cpu->call_stack[cpu->call_stack_index++] = cpu->PC + 1; // Store return address
+        printf("CALL 0x%03x\n", inst & 0xfff);
+        assert(cpu->stack_pointer < MAX_SUBROUTINES-1);
+        cpu->stack_pointer += 1;
+        cpu->call_stack[cpu->stack_pointer - 1] = cpu->PC; // Store return address
         cpu->PC = inst & 0xfff;
+        return;
     } else if (opcode == 3) {
         printf("if (V%X == 0x%02x)\n", high & 0xf, low);
         if (cpu->V[high & 0xf] == low) {
-            cpu->PC += 1;
+            cpu->PC += 2;
         }
     } else if (opcode == 4) {
         printf("if (V%X != 0x%02x)\n", high & 0xf, low);
         if (cpu->V[high & 0xf] != low) {
-            cpu->PC += 1;
+            cpu->PC += 2;
         }
     } else if (opcode == 5) {
         assert((low & 0xf) == 0);
         printf("if (V%X == V%X)\n", high & 0xf, low >> 4);
         if (cpu->V[high & 0xf] == cpu->V[low >> 4]) {
-            cpu->PC += 1;
+            cpu->PC += 2;
         }
     } else if (opcode == 6) {
         printf("V%X = 0x%02x\n", high & 0xf, low);
@@ -154,7 +335,7 @@ void chip8_exec(Chip8 *cpu, uint16_t inst)
         assert((low & 0xf) == 0);
         printf("if (V%X != V%X)\n", high & 0xf, low >> 4);
         if (cpu->V[high & 0xf] != cpu->V[low >> 4]) {
-            cpu->PC += 1;
+            cpu->PC += 2;
         }
     } else if (opcode == 0xa) {
         printf("I = 0x%03x\n", inst & 0xfff);
@@ -168,37 +349,55 @@ void chip8_exec(Chip8 *cpu, uint16_t inst)
         printf("V%X = rand() & 0x%02x\n", x, low);
         cpu->V[x] = r & low;
     } else if (opcode == 0xd) {
-        fprintf(stderr, "Graphics are not implemented yet!\n");
         uint8_t x = high & 0xf;
         uint8_t y = low >> 4;
         uint8_t n = low & 0xf; // height (bytes read)
-        for (int row = cpu->V[y]; row < cpu->V[y] + n; row++) {
-            for (int col = cpu->V[x]; col < cpu->V[x] + 8; col++) {
-                //cpu->I
+        //printf("draw(V%X, V%X, %d)\n", x, y, n);
+        //printf("I = 0x%03X\n", cpu->I);
+        uint8_t start_x = cpu->V[x];
+        uint8_t start_y = cpu->V[y];
+        for (int i = 0; i < n; i++) {
+            // TODO: wrapping???
+            uint8_t pixel_row = cpu->memory[cpu->I + i];
+            for (int col = 0; col < 8; col++) {
+                cpu->display[(start_y + i)*64 + start_x + col] = pixel_row & 0x80;
+                pixel_row <<= 1;
             }
         }
     } else if (opcode == 0xe) {
-        fprintf(stderr, "Input is not implemented yet!\n");
+        uint8_t x = high & 0xf;
+        if (low == 0x9e) {
+            if(chip8_is_key_pressed(cpu->V[x])) {
+                cpu->PC += 2;
+                return;
+            }
+        } else if (low == 0xa1) {
+            if(!chip8_is_key_pressed(cpu->V[x])) {
+                cpu->PC += 2;
+                return;
+            }
+        } else {
+            fprintf(stderr, "Invalid instruction\n");
+        }
     } else if (opcode == 0xf) {
         uint8_t x = high & 0xf;
-        if (low == 0x0a) {
-            fprintf(stderr, "Input is not implemented yet!\n");
-        } else if (low == 0x1e) {
-            printf("I += V%X\n", x);
-            cpu->I += cpu->V[x];
-        } else if (low == 0x07) {
+        if (low == 0x07) {
             printf("V%X = get_delay()\n", x);
             cpu->V[x] = cpu->delay_timer;
+        } else if (low == 0x0a) {
+            fprintf(stderr, "Input is not implemented yet!\n");
         } else if (low == 0x15) {
             printf("delay_timer(V%X)\n", x);
             cpu->delay_timer = cpu->V[x];
         } else if (low == 0x18) {
             printf("sound_timer(V%X)\n", x);
             cpu->sound_timer = cpu->V[x];
+        } else if (low == 0x1e) {
+            printf("I += V%X\n", x);
+            cpu->I += cpu->V[x];
         } else if (low == 0x29) {
             printf("I = sprite_addr[V%X]\n", x);
-            cpu->I = 0;
-            fprintf(stderr, "Fonts are not implemented yet!\n");
+            cpu->I = cpu->V[x] * 5; // 5 bytes per digit, starting at 0x000
         } else if (low == 0x33) {
             printf("set_BCD(V%X)\n", x);
             cpu->memory[cpu->I + 0] = (cpu->V[x] / 100) % 10; // 123 => 1
@@ -220,6 +419,22 @@ void chip8_exec(Chip8 *cpu, uint16_t inst)
     } else {
         assert(0 && "Instruction not implemented");
     }
+
+    cpu->PC += 2;
+}
+
+void chip8_step(Chip8 *cpu, uint32_t delta_ms)
+{
+    cpu->ms_elapsed += delta_ms;
+    if (cpu->ms_elapsed < MS_PER_CYCLE) return;
+    cpu->ms_elapsed -= MS_PER_CYCLE;
+
+    uint8_t high = cpu->memory[cpu->PC + 0];
+    uint8_t low  = cpu->memory[cpu->PC + 1];
+    uint16_t inst = (high << 8) | low;
+
+    printf("PC: 0x%04x\n", cpu->PC);
+    chip8_exec(cpu, inst);
 }
 
 void chip8_dump(Chip8 *cpu)
@@ -231,5 +446,17 @@ void chip8_dump(Chip8 *cpu)
     printf("  V8 = 0x%02x, V9 = 0x%02x, VA = 0x%02x, VB = 0x%02x\n", cpu->V[8], cpu->V[9], cpu->V[10], cpu->V[11]);
     printf("  VC = 0x%02x, VD = 0x%02x, VE = 0x%02x, VF = 0x%02x\n", cpu->V[12], cpu->V[13], cpu->V[14], cpu->V[15]);
     printf("\n");
+}
+
+void chip8_disassemble(Chip8 *cpu)
+{
+    return;
+    for (int i = 0; i < 200; i += 2) {
+        uint8_t high = cpu->memory[0x225 + i + 0];
+        uint8_t low  = cpu->memory[0x225 + i + 1];
+        uint16_t inst = (high << 8) | low;
+
+        printf("0x%04x: %04x    %s\n", 0x200 + i, inst, chip8_decode(cpu, inst));
+    }
 }
 
