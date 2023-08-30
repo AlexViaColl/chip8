@@ -49,10 +49,20 @@ int main(int argc, char **argv)
     Uint32 prev_ticks = SDL_GetTicks();
 
     SDL_Event e;
-    while (true) {
+    bool running = true;
+    while (running) {
         SDL_PollEvent(&e);
         if (e.type == SDL_QUIT) {
-            break;
+            running = false;
+        } else if (e.type == SDL_KEYDOWN || e.type == SDL_KEYUP) {
+            SDL_Keycode keycode = e.key.keysym.sym;
+            if (keycode == SDLK_ESCAPE) {
+                running = false;
+            } else if (keycode >= '0' && keycode <= '9') {
+                cpu.keyboard[keycode - '0'] = e.key.state == SDL_PRESSED ? 1 : 0;
+            } else if (keycode >= 'a' && keycode <= 'f') {
+                cpu.keyboard[keycode - 'a' + 10] = e.key.state == SDL_PRESSED ? 1 : 0;
+            }
         }
 
         Uint32 curr_ticks = SDL_GetTicks();
