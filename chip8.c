@@ -92,7 +92,11 @@ void chip8_load_sprites(Chip8 *cpu)
 
 bool chip8_is_key_pressed(Chip8 *cpu, uint8_t key)
 {
-    return cpu->keyboard[key] != 0;
+    bool is_pressed = cpu->keyboard[key] != 0;
+    if (is_pressed) {
+        cpu->keyboard[key] = 0;
+    }
+    return is_pressed;
 }
 
 int chip8_get_key_pressed(Chip8 *cpu)
@@ -100,6 +104,7 @@ int chip8_get_key_pressed(Chip8 *cpu)
     int key = -1; // No key pressed
     for (int i = 0; i < 16; i++) {
         if (cpu->keyboard[i] != 0) {
+            cpu->keyboard[i] = 0;
             return i;
         }
     }
@@ -261,7 +266,6 @@ void chip8_exec(Chip8 *cpu, uint16_t inst)
             assert(cpu->stack_pointer > 0);
             cpu->PC = cpu->call_stack[cpu->stack_pointer - 1];
             cpu->stack_pointer -= 1;
-            return;
         } else {
             fprintf(stderr, "Call COSMAC VIP routine at 0x%03x\n", inst & 0xfff);
         }
@@ -346,10 +350,17 @@ void chip8_exec(Chip8 *cpu, uint16_t inst)
         for (int i = 0; i < n; i++) {
             // TODO: wrapping???
             uint8_t pixel_row = cpu->memory[cpu->I + i];
+            uint8_t carry = 0;
             for (int col = 0; col < 8; col++) {
-                cpu->display[(start_y + i)*64 + start_x + col] = pixel_row & 0x80;
+                int pixel_idx = (start_y + i)*64 + start_x + col;
+                uint8_t prev = cpu->display[pixel_idx];
+                cpu->display[pixel_idx] ^= pixel_row & 0x80;
+                if (prev == 1 && cpu->display[pixel_idx] == 0) {
+                    carry = 1;
+                }
                 pixel_row <<= 1;
             }
+            cpu->V[0xf] = carry;
         }
     } else if (opcode == 0xe) {
         uint8_t x = high & 0xf;
@@ -369,7 +380,6 @@ void chip8_exec(Chip8 *cpu, uint16_t inst)
         if (low == 0x07) {
             cpu->V[x] = cpu->delay_timer;
         } else if (low == 0x0a) {
-            assert(0);
             int key = chip8_get_key_pressed(cpu);
             if (key == -1) return;
             cpu->V[x] = (uint8_t)key;
@@ -424,6 +434,10 @@ void chip8_dump(Chip8 *cpu)
     printf("  V4 = 0x%02x, V5 = 0x%02x, V6 = 0x%02x, V7 = 0x%02x\n", cpu->V[4], cpu->V[5], cpu->V[6], cpu->V[7]);
     printf("  V8 = 0x%02x, V9 = 0x%02x, VA = 0x%02x, VB = 0x%02x\n", cpu->V[8], cpu->V[9], cpu->V[10], cpu->V[11]);
     printf("  VC = 0x%02x, VD = 0x%02x, VE = 0x%02x, VF = 0x%02x\n", cpu->V[12], cpu->V[13], cpu->V[14], cpu->V[15]);
+    printf("  SP = %d\n", cpu->stack_pointer);
+    for (int i = 0; i < cpu->stack_pointer; i++) {
+        printf(" 0x%04x", cpu->call_stack[i]);
+    }
     printf("\n");
 }
 

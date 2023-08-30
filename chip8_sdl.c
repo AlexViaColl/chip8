@@ -8,12 +8,22 @@
 #define WIDTH (64*SCALE)
 #define HEIGHT (32*SCALE)
 
+#define BG_COLOR 0x111111ff // RRGGBBAA
+#define FG_COLOR 0x117821ff // RRGGBBAA
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <ROM path>\n", argv[0]);
         exit(1);
     }
+
+    bool step_debug = false;
+    if (argc == 3 && strcmp(argv[2], "-s") == 0) {
+        step_debug = true;
+    }
+
+    bool step = false;
 
     Chip8 cpu = {0};
     chip8_load_sprites(&cpu);
@@ -58,7 +68,12 @@ int main(int argc, char **argv)
             SDL_Keycode keycode = e.key.keysym.sym;
             if (keycode == SDLK_ESCAPE) {
                 running = false;
+            } else if (keycode == SDLK_SPACE && e.key.state == SDL_PRESSED) {
+                chip8_dump(&cpu);
+            } else if (keycode == SDLK_RETURN && e.key.state == SDL_PRESSED) {
+                step = true;
             } else if (keycode >= '0' && keycode <= '9') {
+                //printf("Key '%c' %s\n", keycode, e.key.state == SDL_PRESSED ? "pressed" : "released");
                 cpu.keyboard[keycode - '0'] = e.key.state == SDL_PRESSED ? 1 : 0;
             } else if (keycode >= 'a' && keycode <= 'f') {
                 cpu.keyboard[keycode - 'a' + 10] = e.key.state == SDL_PRESSED ? 1 : 0;
@@ -68,20 +83,31 @@ int main(int argc, char **argv)
         Uint32 curr_ticks = SDL_GetTicks();
         Uint32 delta_ticks = curr_ticks - prev_ticks;
         prev_ticks = curr_ticks;
-        chip8_step(&cpu, (uint32_t)delta_ticks);
+
+        if (step_debug) {
+            if (step) {
+                chip8_step(&cpu, (uint32_t)delta_ticks);
+                chip8_dump(&cpu);
+                step = false;
+            }
+        } else {
+            chip8_step(&cpu, (uint32_t)delta_ticks);
+        }
 
         // CPU rendering
         //SDL_FillRect(surface, &rect, 0xffffffff);
         //SDL_UpdateWindowSurface(window);
 
         // GPU rendering
+        SDL_SetRenderDrawColor(renderer, (BG_COLOR >> 24) & 0xff, (BG_COLOR >> 16) & 0xff, (BG_COLOR >> 8) & 0xff, BG_COLOR & 0xff);
         SDL_RenderClear(renderer);
 
         for (int row = 0; row < 32; row++) {
             for (int col = 0; col < 64; col++) {
-                Uint8 color = cpu.display[row*64 + col] > 0 ? 0xff : 0x00;
+                uint32_t color = cpu.display[row*64 + col] > 0 ? FG_COLOR : BG_COLOR;
                 SDL_Rect rect = {.x = col*SCALE, .y = row*SCALE, .w = SCALE, .h = SCALE};
                 SDL_SetRenderDrawColor(renderer, color, color, color, 0xff);
+                SDL_SetRenderDrawColor(renderer, (color >> 24) & 0xff, (color >> 16) & 0xff, (color >> 8) & 0xff, color & 0xff);
                 SDL_RenderFillRect(renderer, &rect);
             }
         }
