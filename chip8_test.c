@@ -1,3 +1,5 @@
+#include <stdlib.h>
+
 #include "./chip8.c"
 
 int main(void)

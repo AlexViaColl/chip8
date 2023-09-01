@@ -1,5 +1,7 @@
+#include <errno.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <stdlib.h>
 
 #include <SDL.h>
 #include "./chip8.c"
@@ -10,6 +12,46 @@
 
 #define BG_COLOR 0x111111ff // RRGGBBAA
 #define FG_COLOR 0x117821ff // RRGGBBAA
+
+char *read_entire_file(const char *path, size_t *out_size)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        fprintf(stderr, "Failed to open file %s\n", path);
+        exit(1);
+    }
+    if (fseek(f, 0, SEEK_END) == -1) {
+        fprintf(stderr, "Failed to read file %s because of %s\n", path, strerror(errno));
+        exit(1);
+    }
+    long size = ftell(f);
+    if (size == -1) {
+        fprintf(stderr, "Failed to get file size of %s because of %s\n", path, strerror(errno));
+        exit(1);
+    }
+    if (fseek(f, 0, SEEK_SET) == -1) {
+        fprintf(stderr, "Failed to read file %s because of %s\n", path, strerror(errno));
+        exit(1);
+    }
+
+    char *raw = malloc(size);
+    if (!raw) {
+        fprintf(stderr, "Failed to allocate memory\n");
+        exit(1);
+    }
+
+    size_t nread = fread(raw, 1, size, f);
+    if (nread != (size_t)size) {
+        fprintf(stderr, "Failed to read file\n");
+        exit(1);
+    }
+
+    if (out_size) {
+        *out_size = size;
+    }
+
+    return raw;
+}
 
 int main(int argc, char **argv)
 {
@@ -27,7 +69,11 @@ int main(int argc, char **argv)
 
     Chip8 cpu = {0};
     chip8_load_sprites(&cpu);
-    chip8_load_rom(&cpu, argv[1]);
+    size_t rom_size;
+    char *rom_bytes = read_entire_file(argv[1], &rom_size);
+    chip8_load_rom(&cpu, rom_bytes, rom_size);
+
+    printf("Game Initialized! Rom size: %ld\n", rom_size);
 
     chip8_disassemble(&cpu);
 

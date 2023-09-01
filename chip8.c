@@ -1,11 +1,15 @@
+#if 0
 #include <assert.h>
 #include <errno.h>
-#include <stdbool.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#else
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#endif
 
 #define MAX_SUBROUTINES 32
 #define CLOCK_RATE 300 // Cycles per second (Hz)
@@ -32,39 +36,13 @@ typedef struct Chip8 {
     uint32_t ms_elapsed;
 } Chip8;
 
-void chip8_load_rom(Chip8 *cpu, const char *path)
+void chip8_load_rom(Chip8 *cpu, char *rom_bytes, size_t rom_size)
 {
-    FILE *f = fopen(path, "rb");
-    if (!f) {
-        fprintf(stderr, "Failed to open file %s\n", path);
-        exit(1);
+    for (size_t i = 0; i < rom_size; i++) {
+        cpu->memory[0x200 + i] = (uint8_t)rom_bytes[i];
     }
-    if (fseek(f, 0, SEEK_END) == -1) {
-        fprintf(stderr, "Failed to read file %s because of %s\n", path, strerror(errno));
-        exit(1);
-    }
-    long size = ftell(f);
-    if (size == -1) {
-        fprintf(stderr, "Failed to get file size of %s because of %s\n", path, strerror(errno));
-        exit(1);
-    }
-    if (fseek(f, 0, SEEK_SET) == -1) {
-        fprintf(stderr, "Failed to read file %s because of %s\n", path, strerror(errno));
-        exit(1);
-    }
-
-    if (size > 0x1000) {
-        fprintf(stderr, "Only ROM's up to 1KB (4096 bytes) are supported\n");
-        exit(1);
-    }
-
-    char raw[0x1000] = {0};
-    size_t nread = fread(raw, 1, size, f);
-    memcpy(cpu->memory + 0x200, raw, size);
 
     cpu->PC = 0x200;
-
-    printf("Successfully loaded %s (%ld instructions, %ld bytes)\n", path, nread/2, nread);
 }
 
 void chip8_load_sprites(Chip8 *cpu)
@@ -87,7 +65,9 @@ void chip8_load_sprites(Chip8 *cpu)
         0xf0, 0x80, 0xf0, 0x80, 0xf0, // "E"
         0xf0, 0x80, 0xf0, 0x80, 0x80, // "F"
     };
-    memcpy(cpu->memory, hex_digit_sprites, sizeof(hex_digit_sprites));
+    for (size_t i = 0; i < sizeof(hex_digit_sprites); i++) {
+        cpu->memory[i] = hex_digit_sprites[i];
+    }
 }
 
 bool chip8_is_key_pressed(Chip8 *cpu, uint8_t key)
@@ -114,6 +94,8 @@ int chip8_get_key_pressed(Chip8 *cpu)
 const char* chip8_decode(Chip8 *cpu, uint16_t inst)
 {
     (void)cpu;
+    (void)inst;
+#if 0
     static char buf[128];
     uint8_t high = inst >> 8;   // 0x6034 >> 8   = 0x60
     uint8_t low  = inst & 0xff; // 0x6034 & 0xff = 0x34
@@ -182,7 +164,7 @@ const char* chip8_decode(Chip8 *cpu, uint16_t inst)
             sprintf(buf, "SHL V%X", x);
             return buf;
         } else {
-            assert(0 && "Invalid instruction 0x8XY?");
+            //assert(0 && "Invalid instruction 0x8XY?");
         }
     } else if (opcode == 9) {
         sprintf(buf, "SNE V%X, V%X (skip if not equal)", high & 0xf, low >> 4);
@@ -242,11 +224,12 @@ const char* chip8_decode(Chip8 *cpu, uint16_t inst)
             sprintf(buf, "LD V%X, [I] (Read registers V0 through Vx from memory starting at location I)", x);
             return buf;
         } else {
-            assert(0 && "Instruction FX?? is not implemented");
+            //assert(0 && "Instruction FX?? is not implemented");
         }
     } else {
-        assert(0 && "Instruction not implemented");
+        //assert(0 && "Instruction not implemented");
     }
+#endif
     return "Unknown";
 }
 
@@ -263,17 +246,17 @@ void chip8_exec(Chip8 *cpu, uint16_t inst)
                 cpu->display[i] = 0;
             }
         } else if (low == 0xee) {
-            assert(cpu->stack_pointer > 0);
+            //assert(cpu->stack_pointer > 0);
             cpu->PC = cpu->call_stack[cpu->stack_pointer - 1];
             cpu->stack_pointer -= 1;
         } else {
-            fprintf(stderr, "Call COSMAC VIP routine at 0x%03x\n", inst & 0xfff);
+            //fprintf(stderr, "Call COSMAC VIP routine at 0x%03x\n", inst & 0xfff);
         }
     } else if (opcode == 1) {
         cpu->PC = inst & 0xfff;
         return;
     } else if (opcode == 2) {
-        assert(cpu->stack_pointer < MAX_SUBROUTINES-1);
+        //assert(cpu->stack_pointer < MAX_SUBROUTINES-1);
         cpu->stack_pointer += 1;
         cpu->call_stack[cpu->stack_pointer - 1] = cpu->PC; // Store return address
         cpu->PC = inst & 0xfff;
@@ -287,7 +270,7 @@ void chip8_exec(Chip8 *cpu, uint16_t inst)
             cpu->PC += 2;
         }
     } else if (opcode == 5) {
-        assert((low & 0xf) == 0);
+        //assert((low & 0xf) == 0);
         if (cpu->V[high & 0xf] == cpu->V[low >> 4]) {
             cpu->PC += 2;
         }
@@ -326,10 +309,10 @@ void chip8_exec(Chip8 *cpu, uint16_t inst)
             cpu->V[0xf] = cpu->V[x] >> 7;
             cpu->V[x] <<= 1;
         } else {
-            assert(0 && "Invalid instruction 0x8XY?");
+            //assert(0 && "Invalid instruction 0x8XY?");
         }
     } else if (opcode == 9) {
-        assert((low & 0xf) == 0);
+        //assert((low & 0xf) == 0);
         if (cpu->V[high & 0xf] != cpu->V[low >> 4]) {
             cpu->PC += 2;
         }
@@ -340,6 +323,7 @@ void chip8_exec(Chip8 *cpu, uint16_t inst)
     } else if (opcode == 0xc) {
         uint8_t x = high & 0xf;
         uint8_t r = rand() % 256; // 0 - RAND_MAX => 0-255
+        //uint8_t r = 0;
         cpu->V[x] = r & low;
     } else if (opcode == 0xd) {
         uint8_t x = high & 0xf;
@@ -373,7 +357,7 @@ void chip8_exec(Chip8 *cpu, uint16_t inst)
                 cpu->PC += 2;
             }
         } else {
-            fprintf(stderr, "Invalid instruction\n");
+            //fprintf(stderr, "Invalid instruction\n");
         }
     } else if (opcode == 0xf) {
         uint8_t x = high & 0xf;
@@ -404,10 +388,10 @@ void chip8_exec(Chip8 *cpu, uint16_t inst)
                 cpu->V[i] = cpu->memory[cpu->I + i];
             }
         } else {
-            assert(0 && "Instruction FX?? is not implemented");
+            //assert(0 && "Instruction FX?? is not implemented");
         }
     } else {
-        assert(0 && "Instruction not implemented");
+        //assert(0 && "Instruction not implemented");
     }
 
     cpu->PC += 2;
@@ -428,6 +412,8 @@ void chip8_step(Chip8 *cpu, uint32_t delta_ms)
 
 void chip8_dump(Chip8 *cpu)
 {
+    (void)cpu;
+#if 0
     printf("Chip-8:\n");
     printf("  I  = 0x%03x, PC = 0x%03x, delay = 0x%02x sound = 0x%02x\n", cpu->I, cpu->PC, cpu->delay_timer, cpu->sound_timer);
     printf("  V0 = 0x%02x, V1 = 0x%02x, V2 = 0x%02x, V3 = 0x%02x\n", cpu->V[0], cpu->V[1], cpu->V[2], cpu->V[3]);
@@ -439,17 +425,20 @@ void chip8_dump(Chip8 *cpu)
         printf(" 0x%04x", cpu->call_stack[i]);
     }
     printf("\n");
+#endif
 }
 
 void chip8_disassemble(Chip8 *cpu)
 {
-    return;
+    (void)cpu;
+#if 0
     for (int i = 0; i < 200; i += 2) {
-        uint8_t high = cpu->memory[0x225 + i + 0];
-        uint8_t low  = cpu->memory[0x225 + i + 1];
+        uint8_t high = cpu->memory[0x200 + i + 0];
+        uint8_t low  = cpu->memory[0x200 + i + 1];
         uint16_t inst = (high << 8) | low;
 
         printf("0x%04x: %04x    %s\n", 0x200 + i, inst, chip8_decode(cpu, inst));
     }
+#endif
 }
 

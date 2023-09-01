@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>CHIP-8 Interpreter</title>
+</head>
+
+<body>
+  <h1>CHIP-8 Interpreter using WASM</h1>
+  <canvas id="canvas" width=640 height=320></canvas>
+
+  <div>
+    <label for="rom">Select a ROM:</label>
+    <select name="roms" id="rom">
+      <!-- populated in index.js -->
+    </select>
+  </div>
+
+  <script src="index.js" type="module"></script>
+</body>
+</html>
