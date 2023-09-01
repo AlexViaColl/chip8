@@ -14,7 +14,7 @@ const rom_start = get_rom();
 const roms = [
     "15PUZZLE", "BLINKY", "BLITZ", "BRIX", "CONNECT4", "GUESS", "HIDDEN", "INVADERS",
     "KALEID", "MAZE", "MERLIN", "MISSILE", "PONG", "PONG2", "PUZZLE", "SYZYGY",
-    "TANK", "test_opcode.ch8", "TETRIS", "TICTAC", "UFO", "VBRIX", "VERS", "WIPEOFF",
+    "TANK", "TEST_OPCODE", "TETRIS", "TICTAC", "UFO", "VBRIX", "VERS", "WIPEOFF",
 ];
 const selectRoms = document.getElementById("rom");
 for (const rom of roms) {
