@@ -1,4 +1,5 @@
 roms/
 
-*.sdl
-*.test
+chip8.sdl
+chip8.term
+chip8.test
